@@ -1,0 +1,12 @@
+UPDATE menus 
+SET spesial_type = CASE id_menu
+    WHEN 1 THEN 'signature'
+    WHEN 2 THEN 'signature'
+    WHEN 3 THEN 'signature'
+    when 4 then 'signature'
+END
+WHERE id_menu IN (1, 2, 3, 4);
+
+INSERT INTO menus (id_menu, nama_menu, harga, dsc) VALUES 
+('5','Brownies','30','Potongan brownies cokelat lembut dengan rasa kaya.'),
+('6','Croissant','22','Roti lapis renyah dengan mentega yang menggoda.');
