@@ -1,20 +1,21 @@
-<?php
-/**
- * Database Connection - Ngopidea Coffee
- * Connects to MySQL database using mysqli
- */
+<<?php
 
-$host     = '172.22.148.251';
-$dbname   = 'coffeeidea';
-$username = 'root';
-$password = 'bajamaulana73*';
+$host     = getenv('DB_HOST');
+$dbname   = getenv('DB_NAME');
+$username = getenv('DB_USER');
+$password = getenv('DB_PASS');
+$port     = getenv('DB_PORT');
 
-$conn = new mysqli($host, $username, $password, $dbname);
+$conn = new mysqli(
+    $host,
+    $username,
+    $password,
+    $dbname,
+    (int)$port
+);
 
-// Check connection
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-// Set charset to utf8mb4
 $conn->set_charset("utf8mb4");
