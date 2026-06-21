@@ -310,8 +310,21 @@ $total = $subtotal + $tax;
             method: 'POST',
             body: formData
           })
-          .then(response => response.json())
-          .then(data => {
+          .then(response => response.text())
+          .then(text => {
+            let data;
+            try {
+              const start = text.indexOf('{');
+              const end = text.lastIndexOf('}');
+              if (start !== -1 && end !== -1) {
+                  data = JSON.parse(text.substring(start, end + 1));
+              } else {
+                  data = JSON.parse(text);
+              }
+            } catch(e) {
+              console.error('Failed to parse JSON', text);
+              throw e;
+            }
             if(data.status === 'success') {
               // Reload page to reflect new totals and items, 
               // location.reload() preserves the scroll position!

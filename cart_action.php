@@ -39,6 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $cart_count += $qty;
             }
         }
+        if (ob_get_length()) {
+            ob_clean();
+        }
         header('Content-Type: application/json');
         echo json_encode(['status' => 'success', 'cart_count' => $cart_count]);
         exit();
