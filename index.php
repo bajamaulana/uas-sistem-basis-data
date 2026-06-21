@@ -434,23 +434,33 @@ if ($signature_drinks_result) {
       </section>
 
       <!-- ==================== Newsletter Section ==================== -->
-      <section class="py-section-lg bg-surface-container">
+      <section id="newsletter" class="py-section-lg bg-surface-container">
         <div class="max-w-container-max-md mx-auto px-gutter text-center">
           <div class="inline-block p-4 bg-white rounded-full mb-8 shadow-sm">
             <span class="material-symbols-outlined text-primary text-4xl">local_cafe</span>
           </div>
           <h2 class="font-headline-md text-headline-md text-on-surface mb-4">Join Our Community</h2>
-          <p class="font-body-lg text-body-lg text-on-surface-variant mb-10 max-w-xl mx-auto">
+          <p class="font-body-lg text-body-lg text-on-surface-variant mb-6 max-w-xl mx-auto">
             Get early access to seasonal drink launches, cafe events, and 15% off your first in-store order when you join.
           </p>
+
+          <?php if (isset($_GET['subscribed']) && $_GET['subscribed'] == 1): ?>
+          <div class="mb-8 p-4 bg-green-100 text-green-800 rounded-xl max-w-lg mx-auto font-label-md shadow-sm border border-green-200">
+            Welcome to the Ngopidea community! You've successfully subscribed.
+          </div>
+          <?php elseif (isset($_GET['subscribed']) && $_GET['subscribed'] == 0): ?>
+          <div class="mb-8 p-4 bg-red-100 text-red-800 rounded-xl max-w-lg mx-auto font-label-md shadow-sm border border-red-200">
+            Oops! That email might already be subscribed or there was an error.
+          </div>
+          <?php endif; ?>
+
           <form
+            action="subscribe.php"
+            method="POST"
             class="flex flex-col sm:flex-row gap-4 max-w-lg mx-auto"
-            onsubmit="
-              event.preventDefault();
-              alert('Welcome to the Ngopidea community!');
-            "
           >
-            <input class="flex-1 px-8 py-4 rounded-full border-none focus:ring-2 focus:ring-primary font-body-md shadow-sm" placeholder="Enter your email" required="" type="email" />
+            <input type="hidden" name="redirect_to" value="<?= htmlspecialchars($_SERVER['REQUEST_URI']) ?>" />
+            <input name="email" class="flex-1 px-8 py-4 rounded-full border-none focus:ring-2 focus:ring-primary font-body-md shadow-sm" placeholder="Enter your email" required="" type="email" />
             <button class="bg-primary hover:bg-primary-container text-on-primary font-label-md px-10 py-4 rounded-full transition-all duration-300 shadow-md whitespace-nowrap" type="submit">
               Sign Me Up
             </button>
@@ -542,6 +552,57 @@ if ($signature_drinks_result) {
           header.classList.add("py-4");
           header.classList.remove("py-2");
         }
+      });
+
+      // AJAX Add to Cart
+      document.querySelectorAll('form[action="cart_action.php"]').forEach((form) => {
+        form.addEventListener('submit', function(e) {
+          e.preventDefault();
+          
+          const formData = new FormData(this);
+          formData.append('ajax', '1');
+          
+          const btn = this.querySelector('button[type="submit"]');
+          const originalText = btn.innerHTML;
+          
+          // Show loading state
+          btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">sync</span> Adding...';
+          btn.classList.add("bg-primary", "text-white");
+          
+          fetch('cart_action.php', {
+            method: 'POST',
+            body: formData
+          })
+          .then(response => response.json())
+          .then(data => {
+            if(data.status === 'success') {
+              // Show success state
+              btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check_circle</span> Added!';
+              
+              // Update badge
+              const badge = document.getElementById('cart-badge');
+              if(badge) {
+                badge.innerText = data.cart_count;
+                if (data.cart_count > 0) {
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+              }
+              
+              // Reset button after 2 seconds
+              setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.classList.remove("bg-primary", "text-white");
+              }, 2000);
+            }
+          })
+          .catch(error => {
+            console.error('Error adding to cart:', error);
+            btn.innerHTML = originalText;
+            btn.classList.remove("bg-primary", "text-white");
+          });
+        });
       });
 
       // Hover animation for product cards

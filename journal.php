@@ -295,22 +295,29 @@
           <div class="relative z-10 max-w-xl">
             <h2 class="font-headline-md text-headline-md mb-6 leading-tight">Join the Morning Ritual</h2>
             <p class="font-body-lg text-body-lg mb-8 opacity-90">Subscribe to our newsletter for exclusive brewing guides, seasonal bean drops, and invitations to our intimate coffee workshops.</p>
-            <form
-              class="flex flex-col sm:flex-row gap-4"
-              onsubmit="
-                event.preventDefault();
-                alert('Welcome to the Ritual!');
-              "
-            >
-              <input
-                class="flex-grow bg-white/20 border-white/30 text-white placeholder:text-white/70 rounded-full px-6 py-4 focus:ring-2 focus:ring-white/50 focus:border-transparent outline-none font-label-md"
-                placeholder="Your email address"
-                required=""
-                type="email"
-              />
-              <button class="pill-button bg-on-primary-container text-white px-10 py-4 font-bold font-label-md hover:bg-black transition-colors whitespace-nowrap" type="submit">Subscribe Now</button>
-            </form>
-            <p class="mt-6 text-[12px] opacity-70 font-label-md">We respect your privacy. Unsubscribe at any time.</p>
+           
+            <?php if (isset($_GET['subscribed']) && $_GET['subscribed'] == 1): ?>
+          <div class="mb-8 p-4 bg-green-100 text-green-800 rounded-xl max-w-lg mx-auto font-label-md shadow-sm border border-green-200">
+            Welcome to the Ngopidea community! You've successfully subscribed.
+          </div>
+          <?php elseif (isset($_GET['subscribed']) && $_GET['subscribed'] == 0): ?>
+          <div class="mb-8 p-4 bg-red-100 text-red-800 rounded-xl max-w-lg mx-auto font-label-md shadow-sm border border-red-200">
+            Oops! That email might already be subscribed or there was an error.
+          </div>
+          <?php endif; ?>
+
+          <form
+            action="subscribe.php"
+            method="POST"
+            class="flex flex-col sm:flex-row gap-4 max-w-lg mx-auto"
+          >
+            <input name="email" class="flex-1 px-8 py-4 rounded-full border-none focus:ring-2 focus:ring-primary font-body-md shadow-sm" placeholder="Enter your email" required="" type="email" />
+            <button class="bg-primary hover:bg-primary-container text-on-primary font-label-md px-10 py-4 rounded-full transition-all duration-300 shadow-md whitespace-nowrap" type="submit">
+              Sign Me Up
+            </button>
+          </form>
+          
+          <p class="mt-6 text-[12px] opacity-70 font-label-md">We respect your privacy. Unsubscribe at any time.</p>
           </div>
         </div>
       </section>
