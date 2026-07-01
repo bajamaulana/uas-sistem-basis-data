@@ -12,6 +12,39 @@ if (!isStaff()) {
     exit();
 }
 
+// --- AJAX HANDLER ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) {
+    $data = json_decode(file_get_contents('php://input'), true);
+    header('Content-Type: application/json');
+    if (!isset($data['action'])) {
+        echo json_encode(['success' => false, 'error' => 'No action specified']);
+        exit;
+    }
+    
+    try {
+        if ($data['action'] === 'add') {
+            $stmt = $conn->prepare("INSERT INTO ingredients (ingredient_name, unit, stock_quantity, min_stock_level) VALUES (?, ?, 0.00, ?)");
+            $stmt->bind_param("ssd", $data['ingredient_name'], $data['unit'], $data['min_stock_level']);
+            $stmt->execute();
+            echo json_encode(['success' => true, 'id' => $conn->insert_id]);
+        } elseif ($data['action'] === 'edit') {
+            $stmt = $conn->prepare("UPDATE ingredients SET ingredient_name=?, unit=?, min_stock_level=? WHERE id=?");
+            $stmt->bind_param("ssdi", $data['ingredient_name'], $data['unit'], $data['min_stock_level'], $data['id']);
+            $stmt->execute();
+            echo json_encode(['success' => true]);
+        } elseif ($data['action'] === 'delete') {
+            $stmt = $conn->prepare("DELETE FROM ingredients WHERE id=?");
+            $stmt->bind_param("i", $data['id']);
+            $stmt->execute();
+            echo json_encode(['success' => true]);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+// --- END AJAX HANDLER ---
+
 $ingredients_result = $conn->query("SELECT * FROM ingredients");
 $ingredients = [];
 $low_stock_count = 0;
@@ -256,13 +289,17 @@ $total_sku = count($ingredients);
 <span class="material-symbols-outlined">history</span>
             Inventory Log
           </button>
-<button class="bg-secondary text-on-primary font-label-md px-6 py-3 rounded-full flex items-center gap-2 shadow-sm hover:brightness-110 transition-all active:scale-95">
+<a href="receive_po.php" class="bg-secondary text-on-primary font-label-md px-6 py-3 rounded-full flex items-center gap-2 shadow-sm hover:brightness-110 transition-all active:scale-95">
 <span class="material-symbols-outlined">local_shipping</span>
             Record Stock Arrival
-          </button>
-<button class="bg-primary text-on-primary font-label-md px-6 py-3 rounded-full flex items-center gap-2 shadow-sm hover:brightness-110 transition-all active:scale-95">
+          </a>
+<a href="inventory_adjust.php" class="bg-primary text-on-primary font-label-md px-6 py-3 rounded-full flex items-center gap-2 shadow-sm hover:brightness-110 transition-all active:scale-95">
 <span class="material-symbols-outlined">sync</span>
             Update Inventory
+          </a>
+<button onclick="openModal('add')" class="bg-primary-container text-on-primary-container font-label-md px-6 py-3 rounded-full flex items-center gap-2 shadow-sm hover:brightness-110 transition-all active:scale-95">
+<span class="material-symbols-outlined">add</span>
+            New Ingredient
           </button>
 </div>
 </div>
@@ -323,10 +360,10 @@ $total_sku = count($ingredients);
             </div>
         </td>
         <td class="px-6 py-5 text-right">
-            <button class="p-2 text-primary hover:bg-primary-container/20 rounded-full transition-colors">
+            <button onclick='openModal("edit", <?= json_encode($item) ?>)' class="p-2 text-primary hover:bg-primary-container/20 rounded-full transition-colors">
                 <span class="material-symbols-outlined">edit</span>
             </button>
-            <button class="p-2 text-on-surface-variant hover:text-error rounded-full transition-colors">
+            <button onclick="deleteItem(<?= $item['id'] ?>)" class="p-2 text-on-surface-variant hover:text-error rounded-full transition-colors">
                 <span class="material-symbols-outlined">delete</span>
             </button>
         </td>
@@ -373,7 +410,114 @@ $total_sku = count($ingredients);
 </div>
 </div>
 </main>
+<!-- Modal Template -->
+<div id="ingredientModal" class="fixed inset-0 z-[100] hidden bg-black/50 backdrop-blur-sm flex items-center justify-center">
+    <div class="bg-surface w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-low">
+            <h3 id="modalTitle" class="font-headline-sm text-primary">Add New Ingredient</h3>
+            <button onclick="closeModal()" class="text-on-surface-variant hover:text-error transition-colors">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="p-6">
+            <form id="ingredientForm" class="space-y-4">
+                <input type="hidden" id="ingredientId" value="">
+                <div>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1">Ingredient Name</label>
+                    <input type="text" id="ingredientName" required class="w-full rounded-lg border-outline-variant/50 focus:ring-primary focus:border-primary bg-surface-container-lowest">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1">Unit</label>
+                    <input type="text" id="ingredientUnit" required placeholder="e.g. g, ml, pcs" class="w-full rounded-lg border-outline-variant/50 focus:ring-primary focus:border-primary bg-surface-container-lowest">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1">Min Stock Level (Reorder Point)</label>
+                    <input type="number" id="ingredientMinStock" step="0.01" required class="w-full rounded-lg border-outline-variant/50 focus:ring-primary focus:border-primary bg-surface-container-lowest">
+                </div>
+                <div class="pt-4 flex justify-end gap-3">
+                    <button type="button" onclick="closeModal()" class="px-5 py-2 rounded-lg font-bold text-on-surface-variant hover:bg-surface-variant transition-colors">Cancel</button>
+                    <button type="submit" class="px-5 py-2 rounded-lg font-bold bg-primary text-on-primary hover:brightness-110 transition-colors">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
+    function openModal(mode, data = null) {
+        const modal = document.getElementById('ingredientModal');
+        const form = document.getElementById('ingredientForm');
+        const title = document.getElementById('modalTitle');
+        
+        if (mode === 'add') {
+            title.innerText = 'Add New Ingredient';
+            form.reset();
+            document.getElementById('ingredientId').value = '';
+        } else if (mode === 'edit' && data) {
+            title.innerText = 'Edit Ingredient';
+            document.getElementById('ingredientId').value = data.id;
+            document.getElementById('ingredientName').value = data.ingredient_name;
+            document.getElementById('ingredientUnit').value = data.unit;
+            document.getElementById('ingredientMinStock').value = data.min_stock_level;
+        }
+        
+        modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+        document.getElementById('ingredientModal').classList.add('hidden');
+    }
+
+    document.getElementById('ingredientForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const id = document.getElementById('ingredientId').value;
+        const action = id ? 'edit' : 'add';
+        
+        const payload = {
+            action: action,
+            id: id,
+            ingredient_name: document.getElementById('ingredientName').value,
+            unit: document.getElementById('ingredientUnit').value,
+            min_stock_level: document.getElementById('ingredientMinStock').value
+        };
+        
+        try {
+            const res = await fetch('inven.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        } catch (err) {
+            alert('Network error');
+        }
+    });
+
+    async function deleteItem(id) {
+        if (!confirm('Are you sure you want to delete this ingredient? Warning: This might fail if the ingredient has transaction logs.')) return;
+        try {
+            const res = await fetch('inven.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: 'delete', id: id})
+            });
+            const data = await res.json();
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        } catch (err) {
+            alert('Network error');
+        }
+    }
+
     // Subtle interactivity
     document.querySelectorAll('tr').forEach(row => {
       row.addEventListener('mouseenter', () => {

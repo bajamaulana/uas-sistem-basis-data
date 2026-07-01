@@ -12,6 +12,44 @@ if (!isStaff()) {
     exit();
 }
 
+// --- AJAX HANDLER ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) {
+    $data = json_decode(file_get_contents('php://input'), true);
+    header('Content-Type: application/json');
+    if (!isset($data['action'])) {
+        echo json_encode(['success' => false, 'error' => 'No action specified']);
+        exit;
+    }
+    
+    try {
+        if ($data['action'] === 'add') {
+            $stmt = $conn->prepare("INSERT INTO products (category_id, product_name, description, price, image_url, is_active) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("issdsi", $data['category_id'], $data['product_name'], $data['description'], $data['price'], $data['image_url'], $data['is_active']);
+            $stmt->execute();
+            echo json_encode(['success' => true, 'id' => $conn->insert_id]);
+        } elseif ($data['action'] === 'edit') {
+            $stmt = $conn->prepare("UPDATE products SET category_id=?, product_name=?, description=?, price=?, image_url=?, is_active=? WHERE id=?");
+            $stmt->bind_param("issdsii", $data['category_id'], $data['product_name'], $data['description'], $data['price'], $data['image_url'], $data['is_active'], $data['id']);
+            $stmt->execute();
+            echo json_encode(['success' => true]);
+        } elseif ($data['action'] === 'delete') {
+            $stmt = $conn->prepare("DELETE FROM products WHERE id=?");
+            $stmt->bind_param("i", $data['id']);
+            $stmt->execute();
+            echo json_encode(['success' => true]);
+        } elseif ($data['action'] === 'toggle_status') {
+            $stmt = $conn->prepare("UPDATE products SET is_active = NOT is_active WHERE id=?");
+            $stmt->bind_param("i", $data['id']);
+            $stmt->execute();
+            echo json_encode(['success' => true]);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+// --- END AJAX HANDLER ---
+
 $categories_result = $conn->query("SELECT * FROM categories");
 $categories = [];
 while ($row = $categories_result->fetch_assoc()) {
@@ -263,7 +301,7 @@ while ($row = $products_result->fetch_assoc()) {
 <h2 class="font-headline-md text-headline-md text-primary mb-2">Menu Management</h2>
 <p class="text-body-lg text-on-surface-variant max-w-xl">Curate the Ngopidea experience. Update your artisanal offerings, seasonal specials, and manage stock availability in real-time.</p>
 </div>
-<button class="flex items-center gap-2 bg-primary text-on-primary px-8 py-4 rounded-full font-label-md text-label-md amber-glow transition-all active:scale-95">
+<button onclick="openModal('add')" class="flex items-center gap-2 bg-primary text-on-primary px-8 py-4 rounded-full font-label-md text-label-md amber-glow transition-all active:scale-95">
 <span class="material-symbols-outlined">add</span>
                     Add New Item
                 </button>
@@ -314,16 +352,21 @@ while ($row = $products_result->fetch_assoc()) {
                             <td class="px-6 py-4">
                                 <div class="flex items-center gap-3">
                                     <label class="switch">
-                                        <input type="checkbox" <?= $product['is_active'] ? 'checked' : '' ?> disabled>
+                                        <input type="checkbox" <?= $product['is_active'] ? 'checked' : '' ?> onchange="toggleStatus(<?= $product['id'] ?>)">
                                         <span class="slider"></span>
                                     </label>
                                     <span class="text-xs font-semibold text-on-surface-variant uppercase"><?= $product['is_active'] ? 'Available' : 'Unavailable' ?></span>
                                 </div>
                             </td>
                             <td class="px-6 py-4 text-right">
-                                <button class="w-8 h-8 rounded-full flex items-center justify-center text-primary bg-primary/5 hover:bg-primary hover:text-on-primary transition-all">
-                                    <span class="material-symbols-outlined text-sm">edit</span>
-                                </button>
+                                <div class="flex justify-end gap-2">
+                                    <button onclick='openModal("edit", <?= json_encode($product) ?>)' class="w-8 h-8 rounded-full flex items-center justify-center text-primary bg-primary/5 hover:bg-primary hover:text-on-primary transition-all">
+                                        <span class="material-symbols-outlined text-sm">edit</span>
+                                    </button>
+                                    <button onclick="deleteItem(<?= $product['id'] ?>)" class="w-8 h-8 rounded-full flex items-center justify-center text-error bg-error/5 hover:bg-error hover:text-on-error transition-all">
+                                        <span class="material-symbols-outlined text-sm">delete</span>
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -354,7 +397,158 @@ while ($row = $products_result->fetch_assoc()) {
 <button class="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-primary text-on-primary rounded-full shadow-2xl flex items-center justify-center z-50">
 <span class="material-symbols-outlined">add</span>
 </button>
+<!-- Modal Template -->
+<div id="itemModal" class="fixed inset-0 z-[100] hidden bg-black/50 backdrop-blur-sm flex items-center justify-center">
+    <div class="bg-surface w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-low">
+            <h3 id="modalTitle" class="font-headline-sm text-primary">Add New Item</h3>
+            <button onclick="closeModal()" class="text-on-surface-variant hover:text-error transition-colors">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="p-6">
+            <form id="itemForm" class="space-y-4">
+                <input type="hidden" id="itemId" value="">
+                <div>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1">Product Name</label>
+                    <input type="text" id="itemName" required class="w-full rounded-lg border-outline-variant/50 focus:ring-primary focus:border-primary bg-surface-container-lowest">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1">Category</label>
+                    <select id="itemCategory" required class="w-full rounded-lg border-outline-variant/50 focus:ring-primary focus:border-primary bg-surface-container-lowest">
+                        <?php foreach($categories as $cat): ?>
+                            <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['category_name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1">Base Price ($)</label>
+                    <input type="number" id="itemPrice" step="0.01" required class="w-full rounded-lg border-outline-variant/50 focus:ring-primary focus:border-primary bg-surface-container-lowest">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1">Description</label>
+                    <textarea id="itemDesc" rows="2" class="w-full rounded-lg border-outline-variant/50 focus:ring-primary focus:border-primary bg-surface-container-lowest"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1">Image URL</label>
+                    <input type="url" id="itemImage" class="w-full rounded-lg border-outline-variant/50 focus:ring-primary focus:border-primary bg-surface-container-lowest">
+                </div>
+                <div class="flex items-center gap-3 pt-2">
+                    <label class="switch">
+                        <input type="checkbox" id="itemActive" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="text-sm font-bold text-on-surface-variant">Active / Available</span>
+                </div>
+                <div class="pt-4 flex justify-end gap-3">
+                    <button type="button" onclick="closeModal()" class="px-5 py-2 rounded-lg font-bold text-on-surface-variant hover:bg-surface-variant transition-colors">Cancel</button>
+                    <button type="submit" class="px-5 py-2 rounded-lg font-bold bg-primary text-on-primary hover:brightness-110 transition-colors">Save Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
+        function openModal(mode, data = null) {
+            const modal = document.getElementById('itemModal');
+            const form = document.getElementById('itemForm');
+            const title = document.getElementById('modalTitle');
+            
+            if (mode === 'add') {
+                title.innerText = 'Add New Item';
+                form.reset();
+                document.getElementById('itemId').value = '';
+                document.getElementById('itemActive').checked = true;
+            } else if (mode === 'edit' && data) {
+                title.innerText = 'Edit Item';
+                document.getElementById('itemId').value = data.id;
+                document.getElementById('itemName').value = data.product_name;
+                document.getElementById('itemCategory').value = data.category_id;
+                document.getElementById('itemPrice').value = data.price;
+                document.getElementById('itemDesc').value = data.description;
+                document.getElementById('itemImage').value = data.image_url;
+                document.getElementById('itemActive').checked = data.is_active == 1;
+            }
+            
+            modal.classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('itemModal').classList.add('hidden');
+        }
+
+        document.getElementById('itemForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const id = document.getElementById('itemId').value;
+            const action = id ? 'edit' : 'add';
+            
+            const payload = {
+                action: action,
+                id: id,
+                product_name: document.getElementById('itemName').value,
+                category_id: document.getElementById('itemCategory').value,
+                price: document.getElementById('itemPrice').value,
+                description: document.getElementById('itemDesc').value,
+                image_url: document.getElementById('itemImage').value,
+                is_active: document.getElementById('itemActive').checked ? 1 : 0
+            };
+            
+            try {
+                const res = await fetch('menu-manage.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (err) {
+                alert('Network error');
+            }
+        });
+
+        async function toggleStatus(id) {
+            try {
+                const res = await fetch('menu-manage.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'toggle_status', id: id})
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    alert('Error updating status: ' + data.error);
+                    window.location.reload(); // revert
+                }
+            } catch (err) {
+                alert('Network error');
+                window.location.reload(); // revert
+            }
+        }
+
+        async function deleteItem(id) {
+            if (!confirm('Are you sure you want to delete this item?')) return;
+            try {
+                const res = await fetch('menu-manage.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'delete', id: id})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (err) {
+                alert('Network error');
+            }
+        }
+
         // Micro-interactions and subtle scroll effects
         document.addEventListener('DOMContentLoaded', () => {
             const header = document.querySelector('header');
