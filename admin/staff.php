@@ -15,6 +15,10 @@ if (!isStaff()) {
 // --- AJAX HANDLER ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) {
     $data = json_decode(file_get_contents('php://input'), true);
+    
+    // Bersihkan buffer output agar tidak ada spasi/enter liar yang ikut terkirim
+    if (ob_get_length()) ob_clean(); 
+    
     header('Content-Type: application/json');
     
     if (isset($data['action']) && $data['action'] === 'add') {
@@ -41,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['CONTENT_TYPE']) && 
             $conn->rollback();
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
         }
-        exit;
+        exit; // Memastikan script PHP berhenti di sini dan tidak mengeksekusi HTML di bawahnya
     }
 }
 // --- END AJAX HANDLER ---
