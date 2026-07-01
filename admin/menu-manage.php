@@ -38,11 +38,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['CONTENT_TYPE']) && 
             $stmt->execute();
             echo json_encode(['success' => true]);
         } elseif ($data['action'] === 'toggle_status') {
-            $stmt = $conn->prepare("UPDATE products SET is_active = NOT is_active WHERE id=?");
-            $stmt->bind_param("i", $data['id']);
-            $stmt->execute();
-            echo json_encode(['success' => true]);
-        }
+    // Menggunakan CASE WHEN untuk mengubah 1 menjadi 0, dan 0 atau selainnya menjadi 1
+    $stmt = $conn->prepare("UPDATE products SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id=?");
+    $stmt->bind_param("i", $data['id']);
+    $stmt->execute();
+    echo json_encode(['success' => true]);
+    }
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
