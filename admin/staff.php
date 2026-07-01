@@ -12,6 +12,40 @@ if (!isStaff()) {
     exit();
 }
 
+// --- AJAX HANDLER ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) {
+    $data = json_decode(file_get_contents('php://input'), true);
+    header('Content-Type: application/json');
+    
+    if (isset($data['action']) && $data['action'] === 'add') {
+        try {
+            $conn->begin_transaction();
+            // 1. Create User
+            $stmt = $conn->prepare("INSERT INTO users (role_id, email, password) VALUES (?, ?, ?)");
+            $role_id = 2; // Staff role
+            $password = password_hash($data['password'], PASSWORD_DEFAULT);
+            $stmt->bind_param("iss", $role_id, $data['email'], $password);
+            $stmt->execute();
+            $user_id = $conn->insert_id;
+            
+            // 2. Create Employee
+            $stmt2 = $conn->prepare("INSERT INTO employees (user_id, full_name, position, hire_date) VALUES (?, ?, ?, CURDATE())");
+            $full_name = explode('@', $data['email'])[0];
+            $position = 'Staff';
+            $stmt2->bind_param("iss", $user_id, $full_name, $position);
+            $stmt2->execute();
+            
+            $conn->commit();
+            echo json_encode(['success' => true]);
+        } catch (Exception $e) {
+            $conn->rollback();
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+}
+// --- END AJAX HANDLER ---
+
 $staff_sql = "SELECT e.*, u.email, r.role_name FROM employees e JOIN users u ON e.user_id = u.id JOIN roles r ON u.role_id = r.id";
 $staff_result = $conn->query($staff_sql);
 
@@ -219,7 +253,7 @@ $on_shift = min(4, $total_staff);
 <h2 class="font-headline-md text-headline-md text-on-surface">Staff Directory</h2>
 <p class="font-body-md text-on-surface-variant opacity-80 mt-2">Manage your artisanal team, shifts, and performance.</p>
 </div>
-<button class="bg-primary-container text-white px-8 py-3 rounded-full font-label-md flex items-center gap-2 hover:bg-primary transition-all duration-300 shadow-lg hover:shadow-primary-container/30 transform hover:-translate-y-1">
+<button onclick="openStaffModal()" class="bg-primary-container text-white px-8 py-3 rounded-full font-label-md flex items-center gap-2 hover:bg-primary transition-all duration-300 shadow-lg hover:shadow-primary-container/30 transform hover:-translate-y-1">
 <span class="material-symbols-outlined">person_add</span>
                     Add New Staff
                 </button>
@@ -359,7 +393,70 @@ $on_shift = min(4, $total_staff);
 </div>
 </div>
 </main>
+<!-- Staff Modal Template -->
+<div id="staffModal" class="fixed inset-0 z-[100] hidden bg-black/50 backdrop-blur-sm flex items-center justify-center">
+    <div class="bg-surface w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-low">
+            <h3 class="font-headline-sm text-primary">Add New Staff</h3>
+            <button onclick="closeStaffModal()" class="text-on-surface-variant hover:text-error transition-colors">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="p-6">
+            <form id="staffForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1">Email Address</label>
+                    <input type="email" id="staffEmail" required class="w-full rounded-lg border-outline-variant/50 focus:ring-primary focus:border-primary bg-surface-container-lowest">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1">Password</label>
+                    <input type="password" id="staffPassword" required class="w-full rounded-lg border-outline-variant/50 focus:ring-primary focus:border-primary bg-surface-container-lowest">
+                </div>
+                <div class="pt-4 flex justify-end gap-3">
+                    <button type="button" onclick="closeStaffModal()" class="px-5 py-2 rounded-lg font-bold text-on-surface-variant hover:bg-surface-variant transition-colors">Cancel</button>
+                    <button type="submit" class="px-5 py-2 rounded-lg font-bold bg-primary text-on-primary hover:brightness-110 transition-colors">Save Staff</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
+    function openStaffModal() {
+        document.getElementById('staffForm').reset();
+        document.getElementById('staffModal').classList.remove('hidden');
+    }
+
+    function closeStaffModal() {
+        document.getElementById('staffModal').classList.add('hidden');
+    }
+
+    document.getElementById('staffForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const payload = {
+            action: 'add',
+            email: document.getElementById('staffEmail').value,
+            password: document.getElementById('staffPassword').value
+        };
+        
+        try {
+            const res = await fetch('staff.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        } catch (err) {
+            alert('Network error');
+        }
+    });
+
         // Simple micro-interaction for active state scaling
         document.querySelectorAll('nav a').forEach(link => {
             link.addEventListener('mousedown', () => {
