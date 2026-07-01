@@ -17,7 +17,46 @@ if (!isStaff()) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['order_id'], $_POST['status'])) {
     $order_id = intval($_POST['order_id']);
     $new_status = $conn->real_escape_string($_POST['status']);
-    $conn->query("UPDATE orders SET status = '$new_status' WHERE id = $order_id");
+    
+    // Check current status first to prevent double-deduction
+    $status_check = $conn->query("SELECT status FROM orders WHERE id = $order_id");
+    if ($status_check && $status_check->num_rows > 0) {
+        $current_status = $status_check->fetch_assoc()['status'];
+        
+        $conn->query("UPDATE orders SET status = '$new_status' WHERE id = $order_id");
+        
+        // Phase 1: Auto-Deduction on Order Completion
+        if ($new_status === 'Completed' && $current_status !== 'Completed') {
+            // Deduct ingredients based on product recipes
+            $recipe_sql = "
+                SELECT pr.ingredient_id, (pr.quantity_needed * od.quantity) as total_needed 
+                FROM order_details od
+                JOIN product_recipes pr ON od.product_id = pr.product_id
+                WHERE od.order_id = $order_id
+            ";
+            $recipe_res = $conn->query($recipe_sql);
+            
+            if ($recipe_res && $recipe_res->num_rows > 0) {
+                $deduct_stmt = $conn->prepare("UPDATE ingredients SET stock_quantity = stock_quantity - ? WHERE id = ?");
+                $log_stmt = $conn->prepare("INSERT INTO inventory_transactions (ingredient_id, transaction_type, quantity, remarks) VALUES (?, 'Out', ?, ?)");
+                
+                $remarks = "Deducted from Order #$order_id";
+                
+                while ($row = $recipe_res->fetch_assoc()) {
+                    $ing_id = $row['ingredient_id'];
+                    $qty_needed = $row['total_needed'];
+                    
+                    // Update stock
+                    $deduct_stmt->bind_param("di", $qty_needed, $ing_id);
+                    $deduct_stmt->execute();
+                    
+                    // Log transaction
+                    $log_stmt->bind_param("ids", $ing_id, $qty_needed, $remarks);
+                    $log_stmt->execute();
+                }
+            }
+        }
+    }
 }
 
 // Get metrics
@@ -26,12 +65,21 @@ $completed_count = $conn->query("SELECT COUNT(*) as cnt FROM orders WHERE status
 $today_count = $conn->query("SELECT COUNT(*) as cnt FROM orders WHERE DATE(order_date) = CURDATE()")->fetch_assoc()['cnt'];
 
 // Get orders list
+$filter = isset($_GET['filter']) ? $_GET['filter'] : 'all';
+$status_condition = "";
+if ($filter === 'processing') {
+    $status_condition = " WHERE o.status IN ('Pending', 'Processing') ";
+} elseif ($filter === 'completed') {
+    $status_condition = " WHERE o.status = 'Completed' ";
+}
+
 $sql = "SELECT o.id, o.order_date, o.total_amount, o.status, c.full_name,
                (SELECT GROUP_CONCAT(CONCAT(od.quantity, 'x ', p.product_name) SEPARATOR ', ') 
                 FROM order_details od JOIN products p ON od.product_id = p.id 
                 WHERE od.order_id = o.id) as items
         FROM orders o
         JOIN customers c ON o.customer_id = c.id
+        $status_condition
         ORDER BY o.order_date DESC";
 $orders = $conn->query($sql);
 ?>
@@ -285,9 +333,14 @@ $orders = $conn->query($sql);
 </div>
 <div class="flex items-center gap-3">
 <div class="flex bg-surface-container p-1 rounded-lg">
-<button class="px-4 py-1.5 rounded-md bg-white shadow-sm text-label-md text-primary transition-all">All Orders</button>
-<button class="px-4 py-1.5 rounded-md text-label-md text-on-surface-variant hover:text-on-surface transition-all">Processing</button>
-<button class="px-4 py-1.5 rounded-md text-label-md text-on-surface-variant hover:text-on-surface transition-all">Completed</button>
+<?php
+    $all_class = $filter === 'all' ? 'bg-white shadow-sm text-primary' : 'text-on-surface-variant hover:text-on-surface';
+    $proc_class = $filter === 'processing' ? 'bg-white shadow-sm text-primary' : 'text-on-surface-variant hover:text-on-surface';
+    $comp_class = $filter === 'completed' ? 'bg-white shadow-sm text-primary' : 'text-on-surface-variant hover:text-on-surface';
+?>
+<a href="orders.php?filter=all" class="px-4 py-1.5 rounded-md text-label-md transition-all <?= $all_class ?>">All Orders</a>
+<a href="orders.php?filter=processing" class="px-4 py-1.5 rounded-md text-label-md transition-all <?= $proc_class ?>">Processing</a>
+<a href="orders.php?filter=completed" class="px-4 py-1.5 rounded-md text-label-md transition-all <?= $comp_class ?>">Completed</a>
 </div>
 <button class="flex items-center gap-2 px-4 py-2 border border-outline-variant rounded-lg text-label-md hover:bg-surface-container transition-all">
 <span class="material-symbols-outlined text-[18px]">filter_list</span>
